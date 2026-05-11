@@ -43,3 +43,22 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Python backend
+backends/.venv/
+backends/__pycache__/
+backends/**/__pycache__/
+backends/*.pyc
+backends/.pytest_cache/
+
+# Large model files
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.pkl
+*.joblib
+
+# Optional large dataset folders
+backends/data/raw/
