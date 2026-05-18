@@ -55,10 +55,7 @@ if __name__ == "__main__":
             "Coffee was absolutely terrible, however the ambiance was cozy.",
 
             # ── Điền câu của bạn vào đây ──────────────────────────
-            "The price was not reasonable.",
-            "The restaurant was not clean.",
-            "The place was not comfortable.",
-            "The food was not expensive.",
+            "Your custom sentence goes here.",
         ]
 
         print("=" * 65)
