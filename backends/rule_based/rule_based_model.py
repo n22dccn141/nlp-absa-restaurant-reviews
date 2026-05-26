@@ -1,5 +1,5 @@
 """
-backends/rule_based_spacy/spacy_model.py
+backends/rule_based/rule_based_model.py
 ==========================================
 Rule-Based ABSA dùng spaCy Dependency Parsing
 Member 2 — NLP Final Project
@@ -15,7 +15,7 @@ Dependency parsing (code này): spaCy phân tích CẤU TRÚC NGỮ PHÁP
   → "great" gắn với "food" qua nsubj, không liên quan gì đến "service".
 
 ─────────────────────────────────────────────────────────────────
-Dependency relations dùng trong ABSA (Section 16 tài liệu):
+Dependency relations dùng trong ABSA:
 
   amod   → adjective modifier      "good food"
             amod(food, good) → aspect=food, opinion=good
@@ -27,11 +27,13 @@ Dependency relations dùng trong ABSA (Section 16 tài liệu):
             acomp(tastes, good) → head verb "tastes" có nsubj "food"
             → aspect=food, opinion=good
 
-  advmod → adverb modifier         "very good"
-            advmod(good, very) → intensifier, score × 1.5
+  advmod → adverb modifier         "very good" / "not good"
+            advmod(good, very)  → intensifier, score × 1.5
+            advmod(good, not)   → negation, score × -1
+            (spaCy đôi khi tag "not" là advmod thay vì neg)
 
   neg    → negation                "not good"
-            neg(good, not) → flip score × −1
+            neg(good, not) → flip score × -1
 
   conj   → conjunction             "food is good and fresh"
             conj(good, fresh) → "fresh" chia sẻ cùng subject với "good"
@@ -41,20 +43,18 @@ Dependency relations dùng trong ABSA (Section 16 tài liệu):
 
 ─────────────────────────────────────────────────────────────────
 Pipeline (Section 16 tài liệu):
-  Step 2 → text_preprocessing      (spaCy nlp(text) → Doc)
-  Step 3 → aspect_detection        (tìm NOUN trong dep tree)
-  Step 4 → sentiment_classification (dep rules → link adj/verb ↔ noun)
-  Step 5 → unknown_handling        (bổ sung Unknown cho aspect thiếu)
-  Step 6 → structured_output       (JSON Section 22.1)
+  Step 2 → text_preprocessing       (spaCy nlp(text) → Doc)
+  Step 3 → sentiment_classification (dep rules → detect aspect + link opinion)
+            Aspect detection tích hợp bên trong:
+            mỗi Rule gọi _get_aspect_category() để kiểm tra noun
+            → đặc trưng của dependency-based ABSA
+  Step 4 → unknown_handling         (bổ sung Unknown cho aspect thiếu)
+  Step 5 → structured_output        (JSON Section 22.1)
 
 Install spaCy:
   pip install spacy
   python -m spacy download en_core_web_sm
 """
-
-# ════════════════════════════════════════════════════════════════════
-# IMPORT
-# ════════════════════════════════════════════════════════════════════
 
 import spacy
 
@@ -101,17 +101,18 @@ ASPECT_KEYWORDS: dict[str, set[str]] = {
     },
 }
 
+
 # ════════════════════════════════════════════════════════════════════
 # IMPLICIT POLARITY KEYWORDS (Section 15.3, 15.4)
 # ════════════════════════════════════════════════════════════════════
 #
-# Các từ này vừa là aspect vừa mang sentiment ngầm định —
-# không cần tìm thêm ADJ bổ nghĩa.
-# Ví dụ: "the food was expensive" → "expensive" xuất hiện → Price Negative.
+# Các từ vừa xác định aspect vừa mang sentiment ngầm định.
+# Không cần tìm thêm ADJ bổ nghĩa.
+# VD: "the food was expensive" → "expensive" → Price Negative ngay.
 #
-# IMPLICIT_ASPECT_MAP: từ → aspect category tương ứng
-# IMPLICIT_NEGATIVE  : các từ mang nghĩa tiêu cực
-# IMPLICIT_POSITIVE  : các từ mang nghĩa tích cực
+# IMPLICIT_ASPECT_MAP : từ → aspect category
+# IMPLICIT_NEGATIVE   : các từ mang nghĩa tiêu cực
+# IMPLICIT_POSITIVE   : các từ mang nghĩa tích cực
 
 IMPLICIT_ASPECT_MAP: dict[str, str] = {
     # Price
@@ -122,12 +123,12 @@ IMPLICIT_ASPECT_MAP: dict[str, str] = {
     "affordable": "Price",
     "reasonable": "Price",
     # Eating Environment / Ambiance
-    "clean":        "Eating Environment / Ambiance",
-    "dirty":        "Eating Environment / Ambiance",
-    "cozy":         "Eating Environment / Ambiance",
-    "noisy":        "Eating Environment / Ambiance",
-    "comfortable":  "Eating Environment / Ambiance",
-    "overcrowded":  "Eating Environment / Ambiance",
+    "clean":       "Eating Environment / Ambiance",
+    "dirty":       "Eating Environment / Ambiance",
+    "cozy":        "Eating Environment / Ambiance",
+    "noisy":       "Eating Environment / Ambiance",
+    "comfortable": "Eating Environment / Ambiance",
+    "overcrowded": "Eating Environment / Ambiance",
 }
 
 IMPLICIT_NEGATIVE: set[str] = {
@@ -145,13 +146,13 @@ IMPLICIT_POSITIVE: set[str] = {
 # SENTIMENT LEXICONS (Section 20.1, 20.2)
 # ════════════════════════════════════════════════════════════════════
 #
-# Lưu ý: implicit keywords (expensive, clean, ...) cũng nằm ở đây
-# vì _get_opinion_score() cần nhận ra chúng khi tính score.
-# Khi dùng trong dependency rules, chúng đã bị loại ra bởi điều kiện
-# `if word in IMPLICIT_ASPECT_MAP: continue`.
+# Implicit keywords cũng nằm ở đây vì _get_opinion_score() cần nhận
+# ra chúng để tính score. Trong dependency rules, chúng được bỏ qua
+# bởi điều kiện `if word in IMPLICIT_ASPECT_MAP: continue` — tránh
+# tính 2 lần (Phần A đã xử lý rồi).
 
 POSITIVE_WORDS: set[str] = {
-    # Tính từ mô tả chất lượng tốt
+    # Tính từ tốt
     "delicious", "tasty", "amazing", "good", "great", "excellent",
     "wonderful", "fantastic", "outstanding", "superb", "brilliant",
     "perfect", "awesome", "nice", "fresh", "helpful", "attentive",
@@ -159,7 +160,7 @@ POSITIVE_WORDS: set[str] = {
     "lively", "beautiful", "lovely", "pleasant", "enjoyable", "impressive",
     "satisfied", "best", "incredible", "generous", "fair", "warm",
     "happy", "pleased", "yummy", "friendly",
-    # Implicit positive (cũng là aspect keyword)
+    # Implicit positive (cũng trong IMPLICIT_ASPECT_MAP)
     "cozy", "comfortable", "clean", "affordable", "reasonable",
     # Động từ tích cực — dùng trong Rule 5 (dobj)
     # VD: "I like the food" → like(+1) + dobj(food) → Food Positive
@@ -167,17 +168,26 @@ POSITIVE_WORDS: set[str] = {
 }
 
 NEGATIVE_WORDS: set[str] = {
-    # Tính từ mô tả chất lượng kém
+    # Tính từ kém
     "bad", "terrible", "awful", "horrible", "disgusting", "poor",
     "mediocre", "disappointing", "worst", "dreadful", "atrocious",
     "slow", "rude", "unfriendly", "unprofessional", "inattentive",
     "bland", "stale", "cold", "undercooked", "overcooked", "greasy",
     "soggy", "loud", "crowded", "uncomfortable", "cramped", "dark",
     "boring", "dull", "late", "wrong", "ignored", "unacceptable", "unpleasant",
-    # Implicit negative (cũng là aspect keyword)
+    # Implicit negative (cũng trong IMPLICIT_ASPECT_MAP)
     "dirty", "noisy", "expensive", "overpriced", "pricey",
     # Động từ tiêu cực — dùng trong Rule 5 (dobj)
     "hate", "dislike",
+}
+
+# Từ phủ định — dùng để detect negation trong _get_opinion_score()
+_NEGATION_WORDS: set[str] = {"not", "never", "no", "hardly", "barely"}
+
+# Từ tăng cường — dùng để detect intensifier trong _get_opinion_score()
+_INTENSIFIER_WORDS: set[str] = {
+    "very", "really", "extremely", "so", "absolutely",
+    "incredibly", "quite", "pretty", "too", "super",
 }
 
 
@@ -185,38 +195,68 @@ NEGATIVE_WORDS: set[str] = {
 # HELPER FUNCTIONS
 # ════════════════════════════════════════════════════════════════════
 
+# Flat lookup dict: keyword → aspect category.
+# Thay vì loop toàn bộ ASPECT_KEYWORDS mỗi lần tra cứu,
+# dùng dict.get() → O(1) thay vì O(n).
+# VD: ASPECT_LOOKUP["food"] = "Food", ASPECT_LOOKUP["waiter"] = "Service"
+ASPECT_LOOKUP: dict[str, str] = {
+    keyword: category
+    for category, keywords in ASPECT_KEYWORDS.items()
+    for keyword in keywords
+}
+
+
 def _get_aspect_category(lemma: str) -> str | None:
     """
-    Tra cứu aspect category cho một lemma.
+    Tra cứu aspect category cho một lemma — O(1) qua ASPECT_LOOKUP.
     Trả về tên aspect (VD: "Food") hoặc None nếu không tìm thấy.
     """
-    for category, keywords in ASPECT_KEYWORDS.items():
-        if lemma in keywords:
-            return category
-    return None
+    return ASPECT_LOOKUP.get(lemma)
+
+
+def _is_negated(token) -> bool:
+    """
+    Kiểm tra token có bị phủ định không.
+
+    spaCy có 2 cách tag negation:
+      1. dep_="neg"    : "not good" → not.dep_=neg, not.head=good   (chuẩn)
+      2. dep_="advmod" : "price was not reasonable"
+                         → not.dep_=advmod, not.head=reasonable    (spaCy behavior)
+
+    Ngoài ra trường hợp đặc biệt trong cấu trúc copular:
+      "food was not good":
+        spaCy tag: good.dep_=acomp, good.head=was(AUX)
+        → "not" là child của "was", không phải child của "good"
+        → phải check thêm children của head khi dep_=="acomp"
+    """
+    # Check children trực tiếp của token
+    for child in token.children:
+        if child.dep_ == "neg":
+            return True
+        # spaCy đôi khi tag "not" là advmod thay vì neg
+        if child.dep_ == "advmod" and child.lower_ in _NEGATION_WORDS:
+            return True
+
+    # Trường hợp đặc biệt: neg nằm ở AUX head (copular structure)
+    if token.dep_ == "acomp":
+        for child in token.head.children:
+            if child.dep_ == "neg":
+                return True
+
+    return False
 
 
 def _get_opinion_score(token) -> float:
     """
     Tính điểm sentiment cho một opinion token (ADJ hoặc VERB).
 
-    Bước 1 — Base score:
+    Base score:
       +1.0 nếu lemma trong POSITIVE_WORDS
       -1.0 nếu lemma trong NEGATIVE_WORDS
-       0.0 nếu không phải opinion word → hàm trả về sớm
+       0.0 nếu không phải opinion word → trả về sớm
 
-    Bước 2 — Xét children của token (quan hệ dep):
-      neg    → có từ phủ định (not, never, no) → negated = True
-      advmod → có trạng từ tăng cường (very, extremely, ...) → intensified = True
-
-    Bước 3 — Trường hợp đặc biệt spaCy:
-      Trong cấu trúc "food was not good":
-        spaCy tag: good(acomp) → head = "was"(AUX) → "not" là neg của "was"
-        → "not" là child của head AUX, không phải child của "good"
-        → phải check thêm children của head khi dep_ == "acomp"
-
-    Bước 4 — Áp dụng:
-      negated     → base *= -1   (đổi chiều sentiment)
+    Điều chỉnh:
+      negated     → base *= -1   (đổi chiều)
       intensified → base *= 1.5  (tăng độ mạnh)
     """
     word = token.lemma_.lower()
@@ -228,34 +268,31 @@ def _get_opinion_score(token) -> float:
     else:
         return 0.0
 
-    negated     = False
-    intensified = False
+    # Kiểm tra negation qua helper function
+    if _is_negated(token):
+        base *= -1
 
-    # Xét children trực tiếp của opinion token
+    # Kiểm tra intensifier trong children
     for child in token.children:
-        if child.dep_ == "neg":
-            negated = True
-        if child.dep_ == "advmod":
-            # spaCy đôi khi tag "not" là advmod thay vì neg
-            # VD: "price was not reasonable" → not.dep_=advmod, not.head=reasonable
-            if child.lower_ in {"not", "never", "no", "hardly", "barely"}:
-                negated = True
-            elif child.lower_ in {
-                "very", "really", "extremely", "so", "absolutely",
-                "incredibly", "quite", "pretty", "too", "super",
-            }:
-                intensified = True
+        if child.dep_ == "advmod" and child.lower_ in _INTENSIFIER_WORDS:
+            base *= 1.5
+            break
 
-    # Trường hợp đặc biệt: "food was not good"
-    # "not" gắn vào "was" (AUX head), không phải vào "good"
-    if token.dep_ == "acomp":
-        for child in token.head.children:
-            if child.dep_ == "neg":
-                negated = True
-
-    if negated:     base *= -1
-    if intensified: base *= 1.5
     return base
+
+
+def _find_aspect_from_verb(verb_token) -> str | None:
+    """
+    Tìm aspect từ subject (nsubj) của một VERB token.
+    Dùng trong Rule 3 (acomp): "food tastes good" → tìm nsubj của "tastes".
+    Trả về aspect category hoặc None.
+    """
+    for child in verb_token.children:
+        if child.dep_ in ("nsubj", "nsubjpass"):
+            cat = _get_aspect_category(child.lemma_.lower())
+            if cat:
+                return cat
+    return None
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -300,95 +337,53 @@ def text_preprocessing(review: str):
 
 
 # ════════════════════════════════════════════════════════════════════
-# STEP 3 — ASPECT DETECTION (Section 19)
-# ════════════════════════════════════════════════════════════════════
-
-def aspect_detection(doc) -> list[dict]:
-    """
-    Step 3: Tìm aspect token trong câu.
-
-    Điều kiện nhận aspect:
-      • token.pos_ == "NOUN" hoặc "PROPN" (danh từ)
-      • token.lemma_ có trong ASPECT_KEYWORDS
-
-    Tại sao chỉ nhận NOUN?
-      spaCy tag "food" = NOUN, "service" = NOUN → đúng.
-      Nếu không filter POS, "good" hay "fast" (ADJ) gần aspect keyword
-      cũng có thể bị nhầm detect.
-
-    Tại sao dùng lemma_ thay vì text?
-      spaCy tự lemmatize: "services" → lemma "service" → match keyword ✅
-      "dishes" → lemma "dish" → match keyword ✅
-      Không cần bảng lookup thủ công như code window-based.
-
-    Lưu ý: implicit keywords ("expensive", "clean", ...) là ADJ nên
-      không được detect ở đây. Chúng được xử lý riêng ở Step 4
-      bằng cách duyệt toàn bộ doc qua IMPLICIT_ASPECT_MAP.
-
-    Trả về: list[dict] — mỗi dict chứa token object, lemma, aspect category
-    """
-    hits = []
-    for token in doc:
-        lemma = token.lemma_.lower()
-        # Chỉ xét danh từ
-        if token.pos_ in ("NOUN", "PROPN"):
-            cat = _get_aspect_category(lemma)
-            if cat:
-                hits.append({
-                    "token":  token,
-                    "lemma":  lemma,
-                    "aspect": cat,
-                })
-    return hits
-
-
-# ════════════════════════════════════════════════════════════════════
 # STEP 4 — SENTIMENT CLASSIFICATION (Section 20)
 # ════════════════════════════════════════════════════════════════════
 
-def sentiment_classification(aspect_hits: list[dict], doc) -> dict[str, str]:
+def sentiment_classification(doc) -> dict[str, str]:
     """
     Step 4: Gán sentiment cho từng aspect qua dependency rules.
 
     Có 2 phần xử lý:
 
-    ── Phần A: Implicit polarity keywords ─────────────────────────
-    Duyệt toàn bộ doc, tìm các token có lemma trong IMPLICIT_ASPECT_MAP.
-    Ví dụ: "expensive" → aspect=Price, score=-1.0 ngay, không cần tìm ADJ.
-    Xét thêm negation: "not expensive" → flip score → Price Positive.
+    ── Phần A: Implicit polarity ──────────────────────────────────
+    Duyệt doc, tìm token có lemma trong IMPLICIT_ASPECT_MAP.
+    VD: "expensive" → Price Negative ngay, không cần tìm ADJ riêng.
+    Xét negation: "not expensive" → flip → Price Positive.
 
-    ── Phần B: Dependency rules (5 rules) ─────────────────────────
-    Duyệt toàn bộ doc, chỉ xét token là opinion word (trong lexicon).
-    Bỏ qua implicit keywords (đã xử lý ở Phần A).
+    ── Phần B: Dependency rules ───────────────────────────────────
+    Duyệt doc, xét opinion words (ADJ/VERB trong lexicon).
+    Bỏ qua implicit keywords (đã xử lý Phần A, tránh tính 2 lần).
 
-    Rule 1 — amod  : "good food"
-      ADJ.dep_ == "amod" và ADJ.head là NOUN aspect
-      → aspect = head noun
+    Rule 1 — amod : "good food"
+      good.dep_=amod, good.head=food(NOUN aspect)
+      → aspect = head
 
     Rule 2 — nsubj : "food is good"
-      ADJ có child với dep_ == "nsubj" là NOUN aspect
-      → aspect = child noun
+      good có child dep_=nsubj là food(NOUN aspect)
+      → aspect = child
 
-    Rule 3 — acomp : "food tastes good"
-      ADJ.dep_ == "acomp", ADJ.head là VERB
-      → tìm nsubj của VERB đó → aspect = nsubj noun
+    Rule 3 — acomp : "food tastes good" / "pasta tasted great"
+      good.head là VERB → tìm nsubj của VERB đó
+      → aspect = nsubj của VERB
+      (không dùng elif với AUX vì "food was good" đã bắt bởi Rule 2)
 
-    Rule 4 — conj  : "food is good and fresh"
-      ADJ.dep_ == "conj", ADJ.head là ADJ khác đã có aspect
-      → dùng chung aspect với head ADJ
+    Rule 4 — conj : "food is good and fresh"
+      fresh.dep_=conj, fresh.head=good(ADJ đã có aspect)
+      → dùng chung subject với head ADJ
 
-    Rule 5 — dobj  : "I like the food" / "I hate the service"
-      VERB là opinion word, có child với dep_ == "dobj" là NOUN aspect
-      → aspect = dobj noun
-      → child.conjuncts xử lý thêm: "like the food and service"
+    Rule 5 — dobj : "I like the food"
+      like là VERB opinion, food là dobj
+      → aspect = dobj (và conjuncts của nó nếu có)
 
-    Tích lũy score per aspect (float), sau đó quy đổi:
+    Score tích lũy per aspect → quy đổi:
       score > 0 → Positive
       score < 0 → Negative
-      score = 0 → Unknown (đề cập nhưng không rõ sentiment)
+      score = 0 → Unknown
     """
-    # scores tích lũy điểm float cho từng aspect
-    scores: dict[str, float] = {}
+    from collections import defaultdict
+    # defaultdict(float) → scores[cat] += score thay vì scores.get(cat, 0.0) + score
+    scores: defaultdict[str, float] = defaultdict(float)
 
     # ── Phần A: Implicit polarity ──────────────────────────────────
     for token in doc:
@@ -399,43 +394,22 @@ def sentiment_classification(aspect_hits: list[dict], doc) -> dict[str, str]:
         asp   = IMPLICIT_ASPECT_MAP[lemma]
         score = -1.0 if lemma in IMPLICIT_NEGATIVE else 1.0
 
-        # Xét negation trực tiếp
-        negated = False
-
-        for child in token.children:
-
-            if (
-                child.dep_ == "neg"
-                or child.lower_ in {"not", "never", "no"}
-            ):
-                negated = True
-                break
-
-        # spaCy case:
-        # "price was not reasonable"
-        # not → neg của "was", không phải của "reasonable"
-        if token.dep_ == "acomp":
-
-            for child in token.head.children:
-
-                if child.dep_ == "neg":
-                    negated = True
-                    break
-
-        if negated:
+        # Xét negation: "not expensive" → flip
+        # spaCy có thể tag "not" là neg hoặc advmod trước implicit keyword
+        if _is_negated(token):
             score *= -1
 
-        scores[asp] = scores.get(asp, 0.0) + score
+        scores[asp] += score
 
     # ── Phần B: Dependency rules ───────────────────────────────────
     for token in doc:
         word = token.lemma_.lower()
 
-        # Chỉ xét opinion words (trong lexicon)
+        # Chỉ xét opinion words trong lexicon
         if word not in POSITIVE_WORDS and word not in NEGATIVE_WORDS:
             continue
 
-        # Bỏ qua implicit keywords — đã xử lý ở Phần A
+        # Bỏ qua implicit keywords — Phần A đã xử lý, tránh tính 2 lần
         if word in IMPLICIT_ASPECT_MAP:
             continue
 
@@ -447,82 +421,59 @@ def sentiment_classification(aspect_hits: list[dict], doc) -> dict[str, str]:
         head = token.head
 
         # ── Rule 1: amod — "good food" ─────────────────────────────
-        # token là ADJ bổ nghĩa trực tiếp cho NOUN
-        # dep tree: good -amod→ food
+        # ADJ bổ nghĩa trực tiếp cho NOUN
         if dep == "amod":
             cat = _get_aspect_category(head.lemma_.lower())
             if cat:
-                scores[cat] = scores.get(cat, 0.0) + score
+                scores[cat] += score
 
         # ── Rule 2: nsubj — "food is good" ────────────────────────
-        # token là ADJ/ROOT, NOUN là subject của nó
-        # dep tree: food -nsubj→ good (good là ROOT hoặc attr)
+        # ADJ có NOUN subject trong children
         for child in token.children:
             if child.dep_ in ("nsubj", "nsubjpass"):
                 cat = _get_aspect_category(child.lemma_.lower())
                 if cat:
-                    scores[cat] = scores.get(cat, 0.0) + score
+                    scores[cat] += score
 
-        # ── Rule 3: acomp — "food tastes good" ────────────────────
-        # token là ADJ complement của VERB
-        # dep tree: good -acomp→ tastes -nsubj→ food
-        #
-        # Lưu ý: "pasta tasted great, ..." → spaCy có thể tag:
-        #   great.dep_=acomp, great.head=tasted(VERB)   ← chuẩn
-        #   hoặc great.dep_=advcl / ccomp trong câu phức → cần xử lý thêm
-        # Mở rộng: nếu token là ADJ và head là VERB (bất kể dep_),
-        # thử tìm nsubj của head VERB đó.
-        # Rule 3 — adjective linked to VERB/AUX
-        if token.pos_ == "ADJ" and head.pos_ in ("VERB", "AUX"):
-
-            for sibling in head.children:
-
-                if sibling.dep_ in ("nsubj", "nsubjpass"):
-
-                    cat = _get_aspect_category(
-                        sibling.lemma_.lower()
-                    )
-
-                    if cat:
-                        scores[cat] = scores.get(cat, 0.0) + score
+        # ── Rule 3: acomp / advmod — "food was delicious" / "pasta tasted great" ──
+        # spaCy thực tế tag:
+        #   "burger was delicious" → delicious.dep_=acomp, head=was(AUX)
+        #   "food tastes good"     → good.dep_=acomp,      head=tastes(VERB)
+        #   "pasta tasted great"   → great.dep_=advmod,    head=tasted(VERB)
+        #     (spaCy tag "great" là ADV advmod thay vì ADJ acomp trong trường hợp này)
+        # → nsubj của head (AUX hoặc VERB) chính là aspect.
+        if dep in ("acomp", "advmod") and head.pos_ in ("AUX", "VERB"):
+            cat = _find_aspect_from_verb(head)
+            if cat:
+                scores[cat] += score
 
         # ── Rule 4: conj — "food is good and fresh" ───────────────
-        # token là ADJ được nối với ADJ khác (head) qua "and"
-        # dep tree: fresh -conj→ good -nsubj→ food
-        # → "fresh" dùng chung subject "food" với "good"
-        if dep == "conj" and head.pos_ in ("ADJ", "VERB"):
-            found = False
-            # Tìm subject từ head ADJ
+        # ADJ là conjunct của ADJ khác đã liên kết với 1 aspect
+        if dep == "conj" and head.pos_ == "ADJ":
+            # Tìm subject từ head ADJ (Rule 2 pattern)
+            cat = None
             for child in head.children:
                 if child.dep_ in ("nsubj", "nsubjpass"):
                     cat = _get_aspect_category(child.lemma_.lower())
                     if cat:
-                        scores[cat] = scores.get(cat, 0.0) + score
-                        found = True
+                        break
             # Fallback: head ADJ là acomp → tìm subject từ VERB của head
             # VD: "food tastes good and fresh" → good(acomp)→tastes→food
-            if not found and head.dep_ == "acomp":
-                for child in head.head.children:
-                    if child.dep_ in ("nsubj", "nsubjpass"):
-                        cat = _get_aspect_category(child.lemma_.lower())
-                        if cat:
-                            scores[cat] = scores.get(cat, 0.0) + score
+            if cat is None and head.dep_ == "acomp" and head.head.pos_ == "VERB":
+                cat = _find_aspect_from_verb(head.head)
+            if cat:
+                scores[cat] += score
 
         # ── Rule 5: dobj — "I like the food" ──────────────────────
-        # token là VERB opinion (like, hate, enjoy, ...)
-        # NOUN aspect là direct object của VERB
-        # dep tree: food -dobj→ like
-        # conjuncts xử lý: "I like the food and service"
+        # VERB opinion, NOUN aspect là direct object
+        # conjuncts: "I like the food and service" → cả food lẫn service
         if token.pos_ == "VERB":
             for child in token.children:
                 if child.dep_ in ("dobj", "obj"):
-                    # Thu thập object và tất cả conjunct của nó
-                    # VD: "food and service" → food + service
-                    objs = [child] + list(child.conjuncts)
-                    for obj in objs:
+                    for obj in [child] + list(child.conjuncts):
                         cat = _get_aspect_category(obj.lemma_.lower())
                         if cat:
-                            scores[cat] = scores.get(cat, 0.0) + score
+                            scores[cat] += score
 
     # ── Quy đổi score → label ──────────────────────────────────────
     return {
@@ -540,7 +491,7 @@ def unknown_handling(sentiment_labels: dict[str, str]) -> dict[str, str]:
     Step 5: Đảm bảo output luôn có đủ 4 aspect.
 
     sentiment_labels từ Step 4 chỉ chứa aspect được detect.
-    Aspect nào không có trong câu → gán "Unknown".
+    Aspect không có trong câu → gán "Unknown".
     Unknown ≠ Neutral — Unknown nghĩa là không đề cập hoặc không xác định.
     """
     return {asp: sentiment_labels.get(asp, "Unknown") for asp in ALL_ASPECTS}
@@ -586,7 +537,6 @@ def print_dep_tree(doc) -> None:
     print(f"\n  {'Token':<16} {'Lemma':<16} {'POS':<7} {'DEP':<10} {'Head'}")
     print(f"  {'─'*16} {'─'*16} {'─'*7} {'─'*10} {'─'*14}")
     for token in doc:
-        # Bỏ qua dấu câu
         if token.text in {",", ".", "!", "?", ";", ":"}:
             continue
         print(f"  {token.text:<16} {token.lemma_:<16} {token.pos_:<7} "
@@ -610,11 +560,10 @@ def predict(review: str, debug: bool = False) -> dict:
     # Step 2 — Tiền xử lý + spaCy parse
     doc = text_preprocessing(review)
 
-    # Step 3 — Tìm aspect (NOUN trong keyword list)
-    aspect_hits = aspect_detection(doc)
-
-    # Step 4 — Gán sentiment qua dependency rules
-    sentiment_labels = sentiment_classification(aspect_hits, doc)
+    # Step 3 — Sentiment Classification (aspect detection tích hợp bên trong)
+    # Mỗi Rule đều gọi _get_aspect_category() để kiểm tra noun có phải
+    # 1 trong 4 aspect không — không cần bước detect riêng.
+    sentiment_labels = sentiment_classification(doc)
 
     # Step 5 — Bổ sung Unknown cho aspect thiếu
     final_labels = unknown_handling(sentiment_labels)
@@ -626,7 +575,6 @@ def predict(review: str, debug: bool = False) -> dict:
         print(f'\n{"═" * 62}')
         print(f'  Review: "{review}"')
         print_dep_tree(doc)
-        print(f"\n  Aspect hits : {[(h['aspect'], h['lemma']) for h in aspect_hits]}")
         print(f"  Sentiment   : {sentiment_labels}")
 
     return output
