@@ -60,7 +60,7 @@ if __name__ == "__main__":
             "The restaurant was not clean.",
             "The place was not comfortable.",
             "The food was not expensive.",
-
+            "Food was so good."
             # ── Điền câu của bạn vào đây ──────────────────────────
         ]
 
