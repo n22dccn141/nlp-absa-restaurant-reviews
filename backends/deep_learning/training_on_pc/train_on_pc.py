@@ -1,22 +1,16 @@
 """
-Fine-tune a transformer model for restaurant ABSA.
+Standalone Windows PC training script for the ABSA deep learning model.
 
-Recommended Windows/RTX 3060 command:
-    python backends/deep_learning/train_bert.py ^
-      --model microsoft/deberta-v3-base ^
-      --epochs 5 ^
-      --batch-size 8 ^
-      --gradient-accumulation-steps 2
+This file is designed so you can copy only the training_on_pc folder to your
+Windows RTX 3060 machine and train there.
 
-Quick smoke test before full training:
-    python backends/deep_learning/train_bert.py --quick
+Default input:
+    restaurant_absa_aspect_rows.csv
 
-Input dataset:
-    backends/data/processed/restaurant_absa_aspect_rows.csv
-
-Saved outputs:
-    backends/deep_learning/bert_absa_model/
-    backends/deep_learning/bert_training_report.json
+Default outputs:
+    model_output/bert_absa_model/
+    model_output/bert_training_report.json
+    model_output/bert_absa_model.zip
 """
 
 from __future__ import annotations
@@ -25,6 +19,7 @@ import argparse
 import inspect
 import json
 import random
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -47,12 +42,12 @@ from transformers import (
 )
 
 
-BACKENDS_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATASET_PATH = (
-    BACKENDS_DIR / "data" / "processed" / "restaurant_absa_aspect_rows.csv"
-)
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "bert_absa_model"
-DEFAULT_REPORT_PATH = Path(__file__).resolve().parent / "bert_training_report.json"
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_DATASET_PATH = SCRIPT_DIR / "restaurant_absa_aspect_rows.csv"
+DEFAULT_OUTPUT_ROOT = SCRIPT_DIR / "model_output"
+DEFAULT_MODEL_DIR = DEFAULT_OUTPUT_ROOT / "bert_absa_model"
+DEFAULT_REPORT_PATH = DEFAULT_OUTPUT_ROOT / "bert_training_report.json"
+DEFAULT_ZIP_BASE = DEFAULT_OUTPUT_ROOT / "bert_absa_model"
 
 ASPECTS = [
     "Food",
@@ -70,9 +65,9 @@ ID2LABEL = {value: key for key, value in LABEL2ID.items()}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a transformer ABSA model.")
+    parser = argparse.ArgumentParser(description="Train ABSA transformer model on PC.")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_MODEL_DIR)
     parser.add_argument("--report-path", type=Path, default=DEFAULT_REPORT_PATH)
     parser.add_argument("--model", default="microsoft/deberta-v3-base")
     parser.add_argument("--epochs", type=float, default=5)
@@ -83,12 +78,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--warmup-ratio", type=float, default=0.1)
     parser.add_argument("--max-length", type=int, default=160)
-    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-size", type=float, default=0.1)
     parser.add_argument("--validation-size", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--quick-rows", type=int, default=1000)
     parser.add_argument("--no-fp16", action="store_true")
+    parser.add_argument("--no-zip", action="store_true")
     return parser.parse_args()
 
 
@@ -102,22 +98,18 @@ def set_seed(seed: int) -> None:
 
 def detect_device() -> str:
     if torch.cuda.is_available():
-        return f"cuda ({torch.cuda.get_device_name(0)})"
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return "mps"
+        return f"cuda: {torch.cuda.get_device_name(0)}"
     return "cpu"
 
 
-def load_dataset(path: Path, quick: bool, quick_rows: int, seed: int) -> pd.DataFrame:
+def load_data(path: Path, quick: bool, quick_rows: int, seed: int) -> pd.DataFrame:
     if not path.exists():
-        raise FileNotFoundError(
-            f"Missing dataset: {path}. Run backends/data/preprocess_dataset.ipynb first."
-        )
+        raise FileNotFoundError(f"Dataset not found: {path}")
 
     df = pd.read_csv(path, dtype={"id": str})
     expected_columns = ["id", "review", "aspect", "sentiment"]
     if list(df.columns) != expected_columns:
-        raise ValueError(f"Expected columns {expected_columns}, got {list(df.columns)}")
+        raise ValueError(f"Expected {expected_columns}, got {list(df.columns)}")
 
     bad_aspects = sorted(set(df["aspect"]) - set(ASPECTS))
     if bad_aspects:
@@ -129,14 +121,11 @@ def load_dataset(path: Path, quick: bool, quick_rows: int, seed: int) -> pd.Data
 
     df = df.dropna(subset=["id", "review", "aspect", "sentiment"]).copy()
     df["review"] = df["review"].astype(str).str.strip()
-    df["aspect"] = df["aspect"].astype(str).str.strip()
-    df["sentiment"] = df["sentiment"].astype(str).str.strip()
     df = df[df["review"].str.len() > 0].copy()
-    df["label"] = df["sentiment"].map(LABEL2ID)
+    df["label"] = df["sentiment"].map(LABEL2ID).astype(int)
 
     if quick:
-        sample_size = min(quick_rows, len(df))
-        df = df.sample(n=sample_size, random_state=seed).reset_index(drop=True)
+        df = df.sample(n=min(quick_rows, len(df)), random_state=seed).reset_index(drop=True)
 
     return df
 
@@ -147,7 +136,6 @@ def split_by_review_id(
     validation_size: float,
     seed: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split by review ID to avoid the same review appearing in multiple splits."""
     review_ids = pd.Series(df["id"].unique())
     train_val_ids, test_ids = train_test_split(
         review_ids,
@@ -170,7 +158,7 @@ def split_by_review_id(
     return train_df, validation_df, test_df
 
 
-def to_hf_dataset(df: pd.DataFrame) -> Dataset:
+def to_dataset(df: pd.DataFrame) -> Dataset:
     return Dataset.from_pandas(
         df[["id", "review", "aspect", "sentiment", "label"]],
         preserve_index=False,
@@ -194,31 +182,29 @@ def compute_metrics(eval_prediction: Any) -> dict[str, float]:
     logits, labels = eval_prediction
     predictions = np.argmax(logits, axis=-1)
 
-    precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
+    macro_p, macro_r, macro_f1, _ = precision_recall_fscore_support(
         labels,
         predictions,
         labels=list(ID2LABEL),
         average="macro",
         zero_division=0,
     )
-    precision_weighted, recall_weighted, f1_weighted, _ = (
-        precision_recall_fscore_support(
-            labels,
-            predictions,
-            labels=list(ID2LABEL),
-            average="weighted",
-            zero_division=0,
-        )
+    weighted_p, weighted_r, weighted_f1, _ = precision_recall_fscore_support(
+        labels,
+        predictions,
+        labels=list(ID2LABEL),
+        average="weighted",
+        zero_division=0,
     )
 
     return {
         "accuracy": accuracy_score(labels, predictions),
-        "macro_precision": precision_macro,
-        "macro_recall": recall_macro,
-        "macro_f1": f1_macro,
-        "weighted_precision": precision_weighted,
-        "weighted_recall": recall_weighted,
-        "weighted_f1": f1_weighted,
+        "macro_precision": macro_p,
+        "macro_recall": macro_r,
+        "macro_f1": macro_f1,
+        "weighted_precision": weighted_p,
+        "weighted_recall": weighted_r,
+        "weighted_f1": weighted_f1,
     }
 
 
@@ -235,6 +221,7 @@ def build_training_args(args: argparse.Namespace, fp16: bool) -> TrainingArgumen
         "load_best_model_at_end": True,
         "metric_for_best_model": "macro_f1",
         "greater_is_better": True,
+        "save_strategy": "epoch",
         "save_total_limit": 2,
         "logging_steps": 50,
         "report_to": "none",
@@ -242,26 +229,24 @@ def build_training_args(args: argparse.Namespace, fp16: bool) -> TrainingArgumen
         "fp16": fp16,
     }
 
-    # Transformers renamed evaluation_strategy to eval_strategy in newer versions.
     signature = inspect.signature(TrainingArguments.__init__)
     if "eval_strategy" in signature.parameters:
         kwargs["eval_strategy"] = "epoch"
     else:
         kwargs["evaluation_strategy"] = "epoch"
-    kwargs["save_strategy"] = "epoch"
 
     return TrainingArguments(**kwargs)
 
 
-def detailed_report(
+def make_report(
     trainer: Trainer,
-    test_dataset: Dataset,
+    tokenized_test: Dataset,
     test_df: pd.DataFrame,
-    args: argparse.Namespace,
     train_df: pd.DataFrame,
     validation_df: pd.DataFrame,
+    args: argparse.Namespace,
 ) -> dict[str, Any]:
-    prediction_output = trainer.predict(test_dataset)
+    prediction_output = trainer.predict(tokenized_test)
     y_true = prediction_output.label_ids
     y_pred = np.argmax(prediction_output.predictions, axis=-1)
 
@@ -286,15 +271,14 @@ def detailed_report(
     test_metrics = compute_metrics((prediction_output.predictions, y_true))
     test_metrics = {key: float(value) for key, value in test_metrics.items()}
 
-    examples = test_df[["id", "review", "aspect", "sentiment"]].copy()
-    examples["prediction"] = [ID2LABEL[int(label)] for label in y_pred]
-    examples = examples.head(25).to_dict(orient="records")
+    sample_predictions = test_df[["id", "review", "aspect", "sentiment"]].copy()
+    sample_predictions["prediction"] = [ID2LABEL[int(label)] for label in y_pred]
 
     return {
         "model": args.model,
+        "device": detect_device(),
         "dataset": str(args.dataset),
         "output_dir": str(args.output_dir),
-        "device": detect_device(),
         "label2id": LABEL2ID,
         "id2label": ID2LABEL,
         "rows": {
@@ -307,14 +291,13 @@ def detailed_report(
             "batch_size": args.batch_size,
             "eval_batch_size": args.eval_batch_size,
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
-            "effective_batch_size": args.batch_size
-            * args.gradient_accumulation_steps,
+            "effective_batch_size": args.batch_size * args.gradient_accumulation_steps,
             "learning_rate": args.learning_rate,
             "weight_decay": args.weight_decay,
             "warmup_ratio": args.warmup_ratio,
             "max_length": args.max_length,
-            "seed": args.seed,
             "quick": args.quick,
+            "seed": args.seed,
         },
         "test_metrics": test_metrics,
         "per_label": per_label,
@@ -324,7 +307,7 @@ def detailed_report(
             y_pred,
             labels=list(ID2LABEL),
         ).tolist(),
-        "sample_predictions": examples,
+        "sample_predictions": sample_predictions.head(25).to_dict(orient="records"),
     }
 
 
@@ -332,20 +315,22 @@ def main() -> None:
     args = parse_args()
     set_seed(args.seed)
 
-    print(f"Device: {detect_device()}")
-    print(f"Model: {args.model}")
-    print(f"Dataset: {args.dataset}")
+    print("Device:", detect_device())
+    print("CUDA available:", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        print("CUDA version:", torch.version.cuda)
+    print("Model:", args.model)
+    print("Dataset:", args.dataset)
 
-    df = load_dataset(args.dataset, args.quick, args.quick_rows, args.seed)
+    df = load_data(args.dataset, args.quick, args.quick_rows, args.seed)
     train_df, validation_df, test_df = split_by_review_id(
         df,
         test_size=args.test_size,
         validation_size=args.validation_size,
         seed=args.seed,
     )
-
     print(f"Rows: train={len(train_df)}, validation={len(validation_df)}, test={len(test_df)}")
-    print("Train label counts:")
+    print("Training label counts:")
     print(train_df["sentiment"].value_counts())
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True)
@@ -356,21 +341,17 @@ def main() -> None:
         label2id=LABEL2ID,
     )
 
-    train_dataset = tokenize_dataset(to_hf_dataset(train_df), tokenizer, args.max_length)
-    validation_dataset = tokenize_dataset(
-        to_hf_dataset(validation_df),
-        tokenizer,
-        args.max_length,
-    )
-    test_dataset = tokenize_dataset(to_hf_dataset(test_df), tokenizer, args.max_length)
+    tokenized_train = tokenize_dataset(to_dataset(train_df), tokenizer, args.max_length)
+    tokenized_validation = tokenize_dataset(to_dataset(validation_df), tokenizer, args.max_length)
+    tokenized_test = tokenize_dataset(to_dataset(test_df), tokenizer, args.max_length)
 
     fp16 = torch.cuda.is_available() and not args.no_fp16
     training_args = build_training_args(args, fp16=fp16)
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=validation_dataset,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_validation,
         tokenizer=tokenizer,
         data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
         compute_metrics=compute_metrics,
@@ -382,18 +363,29 @@ def main() -> None:
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
 
-    report = detailed_report(
+    report = make_report(
         trainer=trainer,
-        test_dataset=test_dataset,
+        tokenized_test=tokenized_test,
         test_df=test_df,
-        args=args,
         train_df=train_df,
         validation_df=validation_df,
+        args=args,
     )
+
+    args.report_path.parent.mkdir(parents=True, exist_ok=True)
     args.report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    print(f"Saved model to: {args.output_dir}")
-    print(f"Saved report to: {args.report_path}")
+    if not args.no_zip:
+        zip_path = shutil.make_archive(
+            str(DEFAULT_ZIP_BASE),
+            "zip",
+            root_dir=args.output_dir.parent,
+            base_dir=args.output_dir.name,
+        )
+        print("Saved zipped model:", zip_path)
+
+    print("Saved model folder:", args.output_dir)
+    print("Saved report:", args.report_path)
     print("Test metrics:")
     for key, value in report["test_metrics"].items():
         print(f"- {key}: {value:.4f}")

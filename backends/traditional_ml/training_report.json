@@ -1,0 +1,171 @@
+{
+  "dataset": "/Users/kafe/Desktop/NLP_Final Project/absa_v01/backends/data/processed/restaurant_absa_4_aspects.csv",
+  "rows": 3041,
+  "train_rows": 2432,
+  "test_rows": 609,
+  "aspects": [
+    "Food",
+    "Service",
+    "Price",
+    "Eating Environment / Ambiance"
+  ],
+  "labels": [
+    "Positive",
+    "Negative",
+    "Unknown"
+  ],
+  "metrics": {
+    "Food": {
+      "accuracy": 0.8210180623973727,
+      "macro_f1": 0.668644028990213,
+      "weighted_f1": 0.810513731343302,
+      "classification_report": {
+        "Positive": {
+          "precision": 0.7426470588235294,
+          "recall": 0.6688741721854304,
+          "f1-score": 0.7038327526132404,
+          "support": 151.0
+        },
+        "Negative": {
+          "precision": 0.6190476190476191,
+          "recall": 0.30952380952380953,
+          "f1-score": 0.4126984126984127,
+          "support": 42.0
+        },
+        "Unknown": {
+          "precision": 0.8539823008849557,
+          "recall": 0.9278846153846154,
+          "f1-score": 0.8894009216589862,
+          "support": 416.0
+        },
+        "accuracy": 0.8210180623973727,
+        "macro avg": {
+          "precision": 0.7385589929187014,
+          "recall": 0.6354275323646185,
+          "f1-score": 0.668644028990213,
+          "support": 609.0
+        },
+        "weighted avg": {
+          "precision": 0.8101746191305329,
+          "recall": 0.8210180623973727,
+          "f1-score": 0.810513731343302,
+          "support": 609.0
+        }
+      }
+    },
+    "Service": {
+      "accuracy": 0.8555008210180624,
+      "macro_f1": 0.5748077851243575,
+      "weighted_f1": 0.8310190584827124,
+      "classification_report": {
+        "Positive": {
+          "precision": 0.5918367346938775,
+          "recall": 0.5,
+          "f1-score": 0.5420560747663551,
+          "support": 58.0
+        },
+        "Negative": {
+          "precision": 0.5625,
+          "recall": 0.16363636363636364,
+          "f1-score": 0.2535211267605634,
+          "support": 55.0
+        },
+        "Unknown": {
+          "precision": 0.8878676470588235,
+          "recall": 0.9737903225806451,
+          "f1-score": 0.9288461538461539,
+          "support": 496.0
+        },
+        "accuracy": 0.8555008210180624,
+        "macro avg": {
+          "precision": 0.680734793917567,
+          "recall": 0.5458088954056696,
+          "f1-score": 0.5748077851243575,
+          "support": 609.0
+        },
+        "weighted avg": {
+          "precision": 0.8302896281665375,
+          "recall": 0.8555008210180624,
+          "f1-score": 0.8310190584827124,
+          "support": 609.0
+        }
+      }
+    },
+    "Price": {
+      "accuracy": 0.9293924466338259,
+      "macro_f1": 0.590399940487814,
+      "weighted_f1": 0.9095130769921043,
+      "classification_report": {
+        "Positive": {
+          "precision": 0.8666666666666667,
+          "recall": 0.43333333333333335,
+          "f1-score": 0.5777777777777777,
+          "support": 30.0
+        },
+        "Negative": {
+          "precision": 0.8,
+          "recall": 0.13333333333333333,
+          "f1-score": 0.22857142857142856,
+          "support": 30.0
+        },
+        "Unknown": {
+          "precision": 0.9320882852292021,
+          "recall": 1.0,
+          "f1-score": 0.9648506151142355,
+          "support": 549.0
+        },
+        "accuracy": 0.9293924466338259,
+        "macro avg": {
+          "precision": 0.8662516506319563,
+          "recall": 0.5222222222222223,
+          "f1-score": 0.590399940487814,
+          "support": 609.0
+        },
+        "weighted avg": {
+          "precision": 0.922358733318279,
+          "recall": 0.9293924466338259,
+          "f1-score": 0.9095130769921043,
+          "support": 609.0
+        }
+      }
+    },
+    "Eating Environment / Ambiance": {
+      "accuracy": 0.8949096880131363,
+      "macro_f1": 0.5129674510840431,
+      "weighted_f1": 0.8729374287526666,
+      "classification_report": {
+        "Positive": {
+          "precision": 0.6538461538461539,
+          "recall": 0.3333333333333333,
+          "f1-score": 0.44155844155844154,
+          "support": 51.0
+        },
+        "Negative": {
+          "precision": 0.5,
+          "recall": 0.09090909090909091,
+          "f1-score": 0.15384615384615385,
+          "support": 22.0
+        },
+        "Unknown": {
+          "precision": 0.9084628670120898,
+          "recall": 0.9813432835820896,
+          "f1-score": 0.9434977578475336,
+          "support": 536.0
+        },
+        "accuracy": 0.8949096880131363,
+        "macro avg": {
+          "precision": 0.6874363402860811,
+          "recall": 0.46852856927483794,
+          "f1-score": 0.5129674510840431,
+          "support": 609.0
+        },
+        "weighted avg": {
+          "precision": 0.8723846478893825,
+          "recall": 0.8949096880131363,
+          "f1-score": 0.8729374287526666,
+          "support": 609.0
+        }
+      }
+    }
+  }
+}

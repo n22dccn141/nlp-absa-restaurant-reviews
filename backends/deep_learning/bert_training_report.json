@@ -1,0 +1,262 @@
+{
+  "model": "microsoft/deberta-v3-base",
+  "device": "cuda: NVIDIA GeForce RTX 3060",
+  "dataset": "D:\\HomePage_D\\training_on_pc\\restaurant_absa_aspect_rows.csv",
+  "output_dir": "D:\\HomePage_D\\training_on_pc\\model_output\\bert_absa_model",
+  "label2id": {
+    "Positive": 0,
+    "Negative": 1,
+    "Unknown": 2
+  },
+  "id2label": {
+    "0": "Positive",
+    "1": "Negative",
+    "2": "Unknown"
+  },
+  "rows": {
+    "train": 9728,
+    "validation": 1216,
+    "test": 1220
+  },
+  "training_args": {
+    "epochs": 5,
+    "batch_size": 8,
+    "eval_batch_size": 16,
+    "gradient_accumulation_steps": 2,
+    "effective_batch_size": 16,
+    "learning_rate": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_length": 160,
+    "quick": false,
+    "seed": 42
+  },
+  "test_metrics": {
+    "accuracy": 0.919672131147541,
+    "macro_precision": 0.8352095593386576,
+    "macro_recall": 0.8185377735709216,
+    "macro_f1": 0.8204687293486649,
+    "weighted_precision": 0.9249848723289162,
+    "weighted_recall": 0.919672131147541,
+    "weighted_f1": 0.9206493986470999
+  },
+  "per_label": {
+    "Positive": {
+      "precision": 0.7135416666666666,
+      "recall": 0.8670886075949367,
+      "f1": 0.7828571428571428,
+      "support": 158
+    },
+    "Negative": {
+      "precision": 0.8269230769230769,
+      "recall": 0.6417910447761194,
+      "f1": 0.7226890756302521,
+      "support": 67
+    },
+    "Unknown": {
+      "precision": 0.9651639344262295,
+      "recall": 0.9467336683417086,
+      "f1": 0.9558599695585996,
+      "support": 995
+    }
+  },
+  "confusion_matrix_labels": [
+    "Positive",
+    "Negative",
+    "Unknown"
+  ],
+  "confusion_matrix": [
+    [
+      137,
+      0,
+      21
+    ],
+    [
+      11,
+      43,
+      13
+    ],
+    [
+      44,
+      9,
+      942
+    ]
+  ],
+  "sample_predictions": [
+    {
+      "id": "3121",
+      "review": "But the staff was so horrible to us.",
+      "aspect": "Food",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3121",
+      "review": "But the staff was so horrible to us.",
+      "aspect": "Service",
+      "sentiment": "Negative",
+      "prediction": "Negative"
+    },
+    {
+      "id": "3121",
+      "review": "But the staff was so horrible to us.",
+      "aspect": "Price",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3121",
+      "review": "But the staff was so horrible to us.",
+      "aspect": "Eating Environment / Ambiance",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3119",
+      "review": "I would definitely recommend Mary's and am making it one of my regular neighborhood haunts.",
+      "aspect": "Food",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3119",
+      "review": "I would definitely recommend Mary's and am making it one of my regular neighborhood haunts.",
+      "aspect": "Service",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3119",
+      "review": "I would definitely recommend Mary's and am making it one of my regular neighborhood haunts.",
+      "aspect": "Price",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3119",
+      "review": "I would definitely recommend Mary's and am making it one of my regular neighborhood haunts.",
+      "aspect": "Eating Environment / Ambiance",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3367",
+      "review": "Best of all is the warm vibe, the owner is super friendly and service is fast.",
+      "aspect": "Food",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3367",
+      "review": "Best of all is the warm vibe, the owner is super friendly and service is fast.",
+      "aspect": "Service",
+      "sentiment": "Positive",
+      "prediction": "Positive"
+    },
+    {
+      "id": "3367",
+      "review": "Best of all is the warm vibe, the owner is super friendly and service is fast.",
+      "aspect": "Price",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3367",
+      "review": "Best of all is the warm vibe, the owner is super friendly and service is fast.",
+      "aspect": "Eating Environment / Ambiance",
+      "sentiment": "Positive",
+      "prediction": "Positive"
+    },
+    {
+      "id": "3192",
+      "review": "The quantity is also very good, you will come out satisfied.",
+      "aspect": "Food",
+      "sentiment": "Positive",
+      "prediction": "Positive"
+    },
+    {
+      "id": "3192",
+      "review": "The quantity is also very good, you will come out satisfied.",
+      "aspect": "Service",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3192",
+      "review": "The quantity is also very good, you will come out satisfied.",
+      "aspect": "Price",
+      "sentiment": "Unknown",
+      "prediction": "Positive"
+    },
+    {
+      "id": "3192",
+      "review": "The quantity is also very good, you will come out satisfied.",
+      "aspect": "Eating Environment / Ambiance",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "1098",
+      "review": "I have been to Roth's twice and both times were very disappointing.",
+      "aspect": "Food",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "1098",
+      "review": "I have been to Roth's twice and both times were very disappointing.",
+      "aspect": "Service",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "1098",
+      "review": "I have been to Roth's twice and both times were very disappointing.",
+      "aspect": "Price",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "1098",
+      "review": "I have been to Roth's twice and both times were very disappointing.",
+      "aspect": "Eating Environment / Ambiance",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3404",
+      "review": "it's a perfect place to have a amanzing indian food.",
+      "aspect": "Food",
+      "sentiment": "Positive",
+      "prediction": "Positive"
+    },
+    {
+      "id": "3404",
+      "review": "it's a perfect place to have a amanzing indian food.",
+      "aspect": "Service",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3404",
+      "review": "it's a perfect place to have a amanzing indian food.",
+      "aspect": "Price",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "3404",
+      "review": "it's a perfect place to have a amanzing indian food.",
+      "aspect": "Eating Environment / Ambiance",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    },
+    {
+      "id": "2599",
+      "review": "The place is so cool and the service is prompt and curtious.",
+      "aspect": "Food",
+      "sentiment": "Unknown",
+      "prediction": "Unknown"
+    }
+  ]
+}
