@@ -59,6 +59,8 @@ backends/.pytest_cache/
 *.onnx
 *.pkl
 *.joblib
+backends/deep_learning/bert_absa_model/
+backends/deep_learning/bert_absa_model.zip
 
 # Optional large dataset folders
 backends/data/raw/

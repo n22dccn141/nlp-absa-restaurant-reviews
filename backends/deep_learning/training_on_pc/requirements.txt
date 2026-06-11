@@ -1,0 +1,9 @@
+pandas
+numpy
+scikit-learn
+datasets
+transformers
+accelerate
+sentencepiece
+protobuf
+safetensors

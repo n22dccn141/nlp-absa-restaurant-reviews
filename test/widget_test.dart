@@ -1,30 +1,39 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:absa_v01/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('ABSA interface validates empty review', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const AbsaApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Restaurant ABSA'), findsOneWidget);
+    expect(find.text('Rule based'), findsOneWidget);
+    expect(find.byKey(const Key('reviewInput')), findsOneWidget);
+    expect(find.text('Results will appear here.'), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byKey(const Key('analyzeButton')));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(
+      find.text('Enter a restaurant review before analyzing.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('model menu can select traditional ML', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const AbsaApp());
+
+    await tester.tap(find.text('Rule based'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Traditional ML').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Traditional ML'), findsOneWidget);
   });
 }
