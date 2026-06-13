@@ -1,1 +1,26 @@
-# Python backend dependencies will be listed here.
+# Core data processing and traditional ML
+pandas
+numpy
+scikit-learn
+joblib
+
+# Rule-based dependency parsing model
+spacy
+
+# Deep learning / BERT model
+torch
+datasets
+transformers
+accelerate
+sentencepiece
+protobuf
+safetensors
+
+# Notebook execution for preprocessing and experiments
+jupyter
+ipykernel
+nbformat
+nbclient
+
+# After installing these packages, install the spaCy English model:
+# python -m spacy download en_core_web_sm
