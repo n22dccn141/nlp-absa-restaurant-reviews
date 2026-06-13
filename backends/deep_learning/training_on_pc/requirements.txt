@@ -1,9 +1,13 @@
 pandas
 numpy
 scikit-learn
+torch
 datasets
 transformers
 accelerate
 sentencepiece
 protobuf
 safetensors
+
+# For an NVIDIA/CUDA Windows PC, install the correct CUDA PyTorch build from:
+# https://pytorch.org/get-started/locally/
